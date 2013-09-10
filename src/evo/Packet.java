@@ -2,6 +2,7 @@ package evo;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -56,11 +57,11 @@ public class Packet implements Map<String, Object>{
 	/** Map core, storage of all values */
 	private Map<String, Object> cm_o_core;
 	/** Jackson ObjectMapper, configuration is accepted. */
-	private final ObjectMapper c_o_mapper =
+	private final ObjectMapper c_o_mapper = onCreateObjectMapper(
 			new ObjectMapper()
-//					.enable(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT)					// enable String indentation
-//					.setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)	// Hide fields when null
-					;
+//			.enable(com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT)					// enable String indentation
+//			.setSerializationInclusion(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)	// Hide fields when null
+			);
 
 //		GETTER - Fields		\\
 	public Map<String, Object> getCore(){
@@ -84,6 +85,11 @@ public class Packet implements Map<String, Object>{
 	@SuppressWarnings("unchecked")	// unchecked - super type must have a absolute type for value, currently is <Object>. In case, constructor accept any type of Map with key <String>.
 	public Packet(Map<String, ? extends Object> pm_o_core){
 		this.cm_o_core = (Map<String, Object>) pm_o_core;
+	}
+	
+	/** Override this method for configuring Jackson ObjectMapper */
+	protected ObjectMapper onCreateObjectMapper(ObjectMapper objectMapper) {
+		return objectMapper;
 	}
 
 //		Static Methods		\\
@@ -123,22 +129,6 @@ public class Packet implements Map<String, Object>{
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}
-	}
-
-	/** Pretty print to JSON format */
-	public void printStackTrace(){
-		String l_s_json = this.toString();
-		try {
-			final Object l_o_json = c_o_mapper.readValue(l_s_json, Object.class);
-			final ObjectWriter writer = c_o_mapper.writer(SerializationFeature.INDENT_OUTPUT);
-			l_s_json = writer.writeValueAsString(l_o_json);
-			System.out.println(l_s_json);
-			return;
-		} catch (JsonParseException e) {
-		} catch (JsonMappingException e) {
-		} catch (IOException e) {
-		}
-		System.out.println("Failed on Packet.printStack()");		
 	}
 	/**
 	 * Same as {@link #serialize()}
@@ -189,6 +179,61 @@ public class Packet implements Map<String, Object>{
 	 * @return default string if not found
 	 */
 	public String getString(String p_s_key, String p_def)		{return this.get(p_s_key, String.class, p_def);}
+	
+//	public Calendar getCalendar(String p_s_key){
+//		Calendar calendar = null;
+//		if (cm_o_core.get(p_s_key) instanceof Calendar) {
+//			calendar = (Calendar) cm_o_core.get(p_s_key);
+//		} else {
+//			final Long millis = this.get(p_s_key, Long.class);	// calendar was serialize as long
+//			if (millis != null) {
+//				calendar = Calendar.getInstance();
+//				calendar.setTimeInMillis(millis);
+//			}
+//		}
+//		return calendar;
+//	}
+
+	public Calendar getCalendar(String p_s_key){
+		return this.getBasicAndCast(p_s_key, Long.class, Calendar.class, new ElementCaster<Long, Calendar>(){
+
+			@Override
+			public Calendar doCast(Long p_o_from) {
+				final Calendar calendar = Calendar.getInstance();
+				calendar.setTimeInMillis(p_o_from);
+				return calendar;
+			}});
+	}
+	 
+	/**
+	 * Handle basic type element casting such as Calendar was serialized as long
+	 * @param p_s_key Element key
+	 * @param p_clss_from cast from
+	 * @param p_clss_to cast to
+	 * @param elementCaster used to initialize the object 
+	 * @return the object returned by {@link ElementCaster}, or the original element if not serialized; null if not found
+	 */
+	protected <F,T> T getBasicAndCast(String p_s_key, Class<F> p_clss_from, Class<T> p_clss_to, ElementCaster<F,T> elementCaster){
+		T r_o_to = null;
+		if (p_clss_to.isInstance(cm_o_core.get(p_s_key))) {	// if the value is not serialized(instance of to Object)
+			r_o_to = p_clss_to.cast(cm_o_core.get(p_s_key));
+		} else {
+			// casting is required
+			final F p_o_from = this.get(p_s_key, p_clss_from);
+			if (p_o_from != null) {
+				r_o_to = elementCaster.doCast(p_o_from);
+				
+				// Replace
+				cm_o_core.put(p_s_key, r_o_to);
+			}
+		}
+		return r_o_to;
+	}
+	
+	protected interface ElementCaster<F,T>{
+		/** Called by {@link Packet #getBasicAndCast(String, Class, Class, ElementCaster)}, when the element require casting */
+		T doCast(F p_o_from);
+	}
 
 //		get - complex type		\\
 	/**
@@ -285,7 +330,7 @@ public class Packet implements Map<String, Object>{
 	}
 	
 	@SuppressWarnings("unchecked")
-	private <T> T get(String p_s_key, ElementDeserializer deserializer){
+	protected <T> T get(String p_s_key, ElementDeserializer deserializer){
 		Object r_o_val = cm_o_core.get(p_s_key);
 		if (this.checkIsJSON(r_o_val)) {
 			final String l_s_json = r_o_val.toString();
@@ -307,14 +352,12 @@ public class Packet implements Map<String, Object>{
 		return (T) r_o_val;
 	}
 	
-	private interface ElementDeserializer{
-		/** Called by {@link Packet #get(String, ElementDeserializer)}, called when an object was deserailized to an JSONObject/Array */
+	protected interface ElementDeserializer{
+		/** Called by {@link Packet #get(String, ElementDeserializer)}, when an object was deserailized to an JSONObject/Array */
 		Object deserialize(ObjectMapper p_mapper, String p_s_json) throws JsonParseException, JsonMappingException, IOException;
 	}
 	
-	/**
-	 * Determine the Object was deserialized to JSON.
-	 */
+	/** Determine the Object was deserialized to JSON. */
 	private boolean checkIsJSON(Object p_o_val){
 		return p_o_val instanceof JSONObject || p_o_val instanceof JSONArray;
 	}
@@ -353,6 +396,22 @@ public class Packet implements Map<String, Object>{
 		}
 		
 		return false;
+	}
+
+	/** Pretty print to JSON format */
+	public void printStackTrace(){
+		String l_s_json = this.serialize();
+		try {
+			final Object l_o_json = c_o_mapper.readValue(l_s_json, Object.class);
+			final ObjectWriter writer = c_o_mapper.writer(SerializationFeature.INDENT_OUTPUT);
+			l_s_json = writer.writeValueAsString(l_o_json);
+			System.out.println(l_s_json);
+			return;
+		} catch (JsonParseException e) {
+		} catch (JsonMappingException e) {
+		} catch (IOException e) {
+		}
+		System.out.println("Failed on Packet.printStack()");		
 	}
 		
 	

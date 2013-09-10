@@ -1,19 +1,18 @@
 package evo;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import com.fasterxml.jackson.core.type.TypeReference;
-
 import evo.util.Display;
 
 public class PacketTestProgram {
 	
 	public static void main(String[] args) {		
-		Packet packet;
+		evo.Packet packet;
 		final String jsonString;
 		final Display beforeDeserialize;
 		final Display afterDeserialize;
@@ -23,6 +22,7 @@ public class PacketTestProgram {
 		packet.put("double", 9d);
 		packet.put("int", 99);
 		packet.put("string", "Hello World");
+		packet.put("calendar", Calendar.getInstance());
 		
 		packet.put("singleObject", new TestObject(true));
 		
@@ -48,6 +48,7 @@ public class PacketTestProgram {
 		Display.display(packet.getDouble("double", 0));
 		Display.display(packet.getInt("int", 0));
 		Display.display(packet.getString("string"));
+		Display.display(packet.getCalendar("calendar"));
 		
 		Display.display(packet.get("singleObject", TestObject.class));
 		
@@ -61,8 +62,8 @@ public class PacketTestProgram {
 		
 		Display.display((Object)packet.get("nestedMap", new TypeReference<Map<Integer, Map<Integer, TestObject>>>() {}));
 
-		beforeDeserialize.display();
-		afterDeserialize.display();
+	beforeDeserialize.display();
+	afterDeserialize.display();
 	}
 
 	private static Map<Integer, Map<Integer, TestObject>> createNestedMap() {
